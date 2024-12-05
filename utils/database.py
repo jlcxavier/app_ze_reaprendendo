@@ -9,9 +9,9 @@ class JSONDatabase:
         self.file_path = os.path.join(app_dir, file_name)
 
         # Cria o arquivo JSON vazio, se ele não existir
-        if not os.path.exists(self.file_path):
+        if not os.path.exists(self.file_path) or os.path.getsize(self.file_path) == 0:
             with open(self.file_path, "w") as file:
-                json.dump([], file)
+                json.dump([], file)  # Inicializa o JSON com uma lista vazia
 
     def insert_transaction(self, data, tipo, descricao, valor):
         """
@@ -27,6 +27,7 @@ class JSONDatabase:
             "descricao": descricao,
             "valor": valor
         })
+        print(f"Transação salva: {data}, {tipo}, {descricao}, {valor}")
 
         # Salva de volta no arquivo JSON
         with open(self.file_path, "w") as file:
@@ -36,6 +37,12 @@ class JSONDatabase:
         """
         Retorna todas as transações armazenadas no arquivo JSON.
         """
-        # Lê as transações do arquivo JSON
-        with open(self.file_path, "r") as file:
-            return json.load(file)
+        if os.path.getsize(self.file_path) == 0:  # Verifica se o arquivo está vazio
+            return []  # Retorna uma lista vazia
+
+        try:
+            with open(self.file_path, "r") as file:
+                return json.load(file)  # Carrega as transações do JSON
+        except json.JSONDecodeError:
+            # Se o JSON estiver corrompido, retorna uma lista vazia
+            return []

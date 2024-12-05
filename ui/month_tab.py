@@ -1,10 +1,9 @@
-from utils.database import JSONDatabase
-from PyQt5.QtWidgets import QDialog, QLabel, QLineEdit, QComboBox, QDateEdit, QPushButton, QVBoxLayout, QHBoxLayout, QMessageBox
 from PyQt5.QtWidgets import (
-    QWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QPushButton, QDialog,
-    QLabel, QLineEdit, QComboBox, QDateEdit, QHBoxLayout
+    QWidget, QTableWidget, QTableWidgetItem, QVBoxLayout, QHBoxLayout,
+    QPushButton, QDialog, QLabel, QLineEdit, QComboBox, QDateEdit, QMessageBox
 )
 from PyQt5.QtCore import Qt, QDate
+from utils.database import JSONDatabase
 
 
 class MonthTab(QWidget):
@@ -12,8 +11,9 @@ class MonthTab(QWidget):
         super().__init__()
         self.year = year
         self.month = month
+        self.db = JSONDatabase()  # Inicializa o banco de dados JSON
 
-        # Tabela
+        # Inicializa a tabela
         self.tabela = QTableWidget()
         self.tabela.setRowCount(len(dias))
         self.tabela.setColumnCount(5)
@@ -21,7 +21,7 @@ class MonthTab(QWidget):
             ["Data", "Dia da Semana", "Entrada", "Saida", "Saldo"])
         self.populate_table(dias, saldo_anterior)
 
-        # Botão para adicionar entrada/Saida
+        # Botão para adicionar entradas/saídas
         self.add_button = QPushButton("+")
         self.add_button.clicked.connect(self.open_form)
 
@@ -31,10 +31,13 @@ class MonthTab(QWidget):
         layout.addWidget(self.add_button)
         self.setLayout(layout)
 
-        # Eventos
-        self.setup_events()
+        # Carrega as transações do JSON e atualiza a tabela
+        self.carregar_transacoes()
 
     def populate_table(self, dias, saldo_anterior):
+        """
+        Preenche a tabela com os dias do mês.
+        """
         for i, (data, dia_semana) in enumerate(dias):
             # Coluna de Data
             self.tabela.setItem(i, 0, QTableWidgetItem(data))
@@ -46,7 +49,7 @@ class MonthTab(QWidget):
             self.tabela.item(i, 1).setFlags(
                 Qt.ItemIsSelectable | Qt.ItemIsEnabled)
 
-            # Colunas de Entrada e Saida (Editáveis)
+            # Colunas de Entrada e Saída (Editáveis)
             self.tabela.setItem(i, 2, QTableWidgetItem(""))  # Entrada
             self.tabela.setItem(i, 3, QTableWidgetItem(""))  # Saida
 
@@ -59,45 +62,53 @@ class MonthTab(QWidget):
             self.tabela.item(i, 4).setFlags(
                 Qt.ItemIsSelectable | Qt.ItemIsEnabled)
 
-    def setup_events(self):
-        # Conecta os eventos de edição de entrada e Saida
-        self.tabela.itemChanged.connect(self.update_saldo)
+    def carregar_transacoes(self):
+        """
+        Carrega as transações do JSON e exibe na tabela correspondente.
+        """
+        transacoes = self.db.get_transactions()
+        for transacao in transacoes:
+            data = transacao["data"]
+            tipo = transacao["tipo"]
+            descricao = transacao["descricao"]
+            valor = transacao["valor"]
 
-    def update_saldo(self, item):
-        if item.column() not in [2, 3]:  # Apenas para Entrada ou Saida
-            return
-
-        for i in range(self.tabela.rowCount()):
-            try:
-                entrada = float(self.tabela.item(i, 2).text()) if self.tabela.item(
-                    i, 2) and self.tabela.item(i, 2).text() else 0
-                saida = float(self.tabela.item(i, 3).text()) if self.tabela.item(
-                    i, 3) and self.tabela.item(i, 3).text() else 0
-                saldo_anterior = float(self.tabela.item(
-                    i - 1, 4).text()) if i > 0 else float(self.tabela.item(0, 4).text())
-                saldo_atual = saldo_anterior + entrada - saida
-                self.tabela.item(i, 4).setText(f"{saldo_atual:.2f}")
-            except ValueError:
-                self.tabela.item(i, 4).setText("Erro")
-
-    def get_final_balance(self):
-        """Retorna o saldo final do mês."""
-        last_row = self.tabela.rowCount() - 1
-        return float(self.tabela.item(last_row, 4).text()) if self.tabela.item(last_row, 4) else 0
+            # Procura a linha correspondente à data
+            for i in range(self.tabela.rowCount()):
+                if self.tabela.item(i, 0).text() == data:
+                    col = 2 if tipo == "Entrada" else 3
+                    # Atualiza os valores na tabela
+                    self.tabela.setItem(
+                        i, col, QTableWidgetItem(f"{valor:.2f}"))
+                    break
 
     def open_form(self):
         """
-        Abre um formulário para adicionar uma nova entrada ou Saida.
+        Abre o formulário para adicionar uma nova entrada/saída.
         """
         dialog = EntryForm(self)
         dialog.exec_()
+
+    def get_final_balance(self):
+        """
+        Retorna o saldo final do mês com base nos dados da tabela.
+        """
+        last_row = self.tabela.rowCount() - 1  # Índice da última linha
+        # Verifica se há saldo na última linha
+        if last_row >= 0 and self.tabela.item(last_row, 4):
+            try:
+                # Converte o saldo para float
+                return float(self.tabela.item(last_row, 4).text())
+            except ValueError:
+                return 0.0  # Retorna 0.0 se o saldo não for numérico
+        return 0.0  # Retorna 0.0 se a tabela estiver vazia
 
 
 class EntryForm(QDialog):
     def __init__(self, parent):
         super().__init__(parent)
         self.parent = parent
-        self.setWindowTitle("Cadastrar Entrada/Saida")
+        self.setWindowTitle("Cadastrar Entrada/Saída")
         self.setFixedSize(600, 400)
         self.db = JSONDatabase()  # Usa JSON como armazenamento
 
@@ -140,7 +151,7 @@ class EntryForm(QDialog):
 
     def submit_form(self):
         """
-        Processa o formulário, adiciona os valores ao JSON e à tabela.
+        Processa o formulário, adiciona os valores ao JSON e atualiza a tabela.
         """
         descricao = self.description_input.text()
         valor = self.value_input.text()
@@ -157,12 +168,8 @@ class EntryForm(QDialog):
         # Salva a transação no JSON
         self.db.insert_transaction(data, tipo, descricao, valor)
 
-        # Adiciona a transação na tabela
-        for i in range(self.parent.tabela.rowCount()):
-            if self.parent.tabela.item(i, 0).text() == data:
-                col = 2 if tipo == "Entrada" else 3
-                self.parent.tabela.item(i, col).setText(f"{valor:.2f}")
-                self.parent.update_saldo(self.parent.tabela.item(i, col))
-                break
+        # Recarrega as transações na tabela
+        self.parent.carregar_transacoes()
 
+        # Fecha o formulário após o cadastro
         self.accept()
